@@ -1,0 +1,864 @@
+---
+title: "2016 Election investigation"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction 
+```{r eval=FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(grid)
+library(gridExtra)
+library(knitr)
+getwd()
+setwd( "C:/Users/aggar/Downloads/lesson_2R/Project_submission")
+knit('Relatorio.Rmd', encoding = 'UTF-8')
+
+
+```
+
+ I am bringing in the Data of Pesidental Campaign Contributions for the year 2016.  I found the data on the FEC (Federal Election Commissions website).  The Data can be obtained through this link http://classic.fec.gov/disclosurep/PDownload.do.  I was drawn to this data because I live in the state of Califonia and I am fairly igorant about election finace,  So I thought I would try to do an analysis on this data to be less ignorant. To begin with lets take a summary view of our data to see what we are working with.
+```{r}
+# df <- read.csv('CA_DATA.csv', row.names=NULL)
+# names(df)
+# summary(df)
+# # all values shifed over by one column
+# #names(df) <- c(names(df)[1:ncol(df)+1])#Value shift correction.
+# 
+# nrow(df)
+CA_samp <- df[sample(nrow(df), 200000), ]# grab random sample from database 
+```
+Some things of note off the bat, There seem to be several contributors with a large number of donations, For instance, Michael Petit, has contributed over 473 times.  The two most numorous groups in terms of campaign contributions are the retired and the Unemployed. ONe thing that is odd is the negative value in the contribution amount field,  The minimum value is -10,5000.00 Lets see if we can take a quick look at this.
+
+## Lets Take a look at how our Values are distibuted.
+```{r}
+
+head(CA_samp, 20)
+head(CA_samp$contb_receipt_amt)
+summary(CA_samp$contb_receipt_amt)
+colSums(is.na(CA_samp)) #run to see the amount of Na values in your fieds.
+
+# ggplot(aes(x = cand_nm, y = contb_receipt_amt),
+#        data = CA_samp)+
+#   geom_boxplot()+
+#   ylim(0,5000)
+
+# the colum to the right 
+# #names(CA_samp) <- c(names(CA_samp)[1:ncol(CA_samp)+1])
+
+bad_amounts <-subset(CA_samp, contb_receipt_amt < 0)
+
+head(bad_amounts,20)
+quantile(bad_amounts$contb_receipt_amt, .95)
+
+table(bad_amounts$receipt_desc)
+
+hist(bad_amounts$contb_receipt_amt, breaks=30, col="#CCCCFF")+
+  scale_x_continuous(binwidth=20)
+
+bad_amounts<-subset(bad_amounts, bad_amounts$receipt_desc=='Refund')
+#Makes the negative values positive for evaluations 
+bad_amounts$contb_receipt_amt <- (-1)*bad_amounts$contb_receipt_amt 
+  
+ggplot(data=bad_amounts, aes(bad_amounts$contb_receipt_amt)) + 
+         geom_histogram(binwidth=28) +
+  scale_x_continuous(limits = 
+    c( quantile(bad_amounts$contb_receipt_amt, .05), 
+       quantile(bad_amounts$contb_receipt_amt, .95) )
+    , breaks = seq(0, 3000, by = 200)) +
+  xlab("Refund  Ammount(USD)") +
+  ylab("Percentage of Number of Refundes")
+
+
+#crony_capitalism <-  bad_amounts%>% group_by(contbr_nm) %>% filter(n()>4)
+#find the names that appear in our dataset more than 4 times 
+#crony_capitalism <-  crony_capitalism%>% group_by(contbr_nm)
+summary(bad_amounts$contb_receipt_amt)
+sum(bad_amounts$contb_receipt_amt)
+bad_amounts[bad_amounts$contb_receipt_amt == -8300, ]
+#crony_capitalism <-  crony_capitalism%>% group_by(contbr_nm)
+
+```
+
+
+
+Looking at the head of our data and scrolling over to the receipt_desc field, we would assume that most of our values are refund witch is true, but using the table functon on the same field we can see that the reasons for the negative amounts our more varied than at first glance, For now, I just want to look at the refunded values so we subset this data before putting it in the histogram. We can see from the distribution plot of our sample data, that That a large amount of our values are between 0 and 2700 (the max contribution) and produces long tail distribution. It looks like our data is heavily skewed to the left.  To find out more about this data, we can plot cumaltibe graph of the couts.   
+
+
+
+```{r}
+
+#distibution of values by total donations 
+ggplot(bad_amounts, aes(x=bad_amounts$contb_receipt_amt)) + 
+  stat_ecdf(geom = "step", pad = FALSE)+
+  xlab("Refunded Ammount(USD)") +
+  ylab("Percentage of Number of Refundes")
+
+```
+
+
+Looking at the cumative graph avove, we get a sence of how the size of donations refunds are distirbuted. It looks like aproximatly 90% of all refunds where below 1000, with 75% of refunds around the 200 mark. We can see that refunds above 4000 were very uncommon.  Lets take a closer look to see how or donation refund values coresponded to the total amount refunded.    
+
+```{r}
+#reorder values to track recitp amount over time 
+bad_amounts <- bad_amounts[with(bad_amounts, 
+                                order(bad_amounts$contb_receipt_amt)), ] 
+#Removes empty column
+bad_amounts <- bad_amounts[,colSums(is.na(bad_amounts))<nrow(bad_amounts)]
+bad_amounts<-bad_amounts %>% mutate(
+  #get a cumulative sum total for the recipt amounts 
+  cumsum = cumsum(bad_amounts$contb_receipt_amt))
+df$year_joind.bucket <- cut(df$year_joind, c(2004, 2009, 2011, 2012, 2014))
+
+ggplot(aes(x = contb_receipt_amt, 
+           y = cumsum/max(bad_amounts$cumsum)), data = bad_amounts) +
+  geom_line() +
+  scale_y_continuous(breaks = seq(0, 1, by = .1))+
+  scale_x_continuous(breaks = seq(0, 9000, by = 1000))+
+  xlab("Refunded Ammount(USD)") +
+  ylab("Percentage of Value of Refunds")
+
+max(bad_amounts$cumsum)
+head(bad_amounts)
+nrow(bad_amounts)# Number of rows with negative amounts.
+```
+
+
+Here we get a very inteststing plot as opposed to the one we had earlir.  In terms of shere volume of refunds, amounts above 1000 contribute to a large portion to our total number of refunds, Howerver; looking at the graph here we get a totaly differnt story,  In terms of how much the values contribute to the total, about 50% of our data is above the 2700 mark, with a sharp increse right at 2700 up to 90%  This must mean values of around 2700 contributed alot more to the total value than values of 100 or less.  By using the max function, we found our total to be /$666,889.60.  Lets compare this to the total money refunded by the caditates. And also take a look at the money rasid from 4 distict donation groups   
+
+
+
+
+
+##Refunded Values 
+```{r}
+#total amount refunded by cadidates
+Refund_per_cadidate <- aggregate(bad_amounts$contb_receipt_amt, 
+                              by=list(Category=bad_amounts$cand_nm), FUN=sum)
+
+bad_amounts$contb_receipt_amt.bucket <- cut(
+  #makes a field so that you can query the dat in that range.
+  bad_amounts$contb_receipt_amt, c(0, 1000, 2500, 3000, 8900), dig.lab = 4)
+head(bad_amounts)
+
+
+
+ggplot(aes(x=contb_receipt_amt, y = cumsum/max(bad_amounts$cumsum)),
+       data = bad_amounts) +
+  geom_line(aes(color = contb_receipt_amt.bucket), size =2) +
+  xlab("Refunded Ammount(USD)") +
+  ylab("Percentage of Value of Refunds")
+ 
+ 
+##order by candidate contribution refund.
+Refund_per_cadidate <- 
+  Refund_per_cadidate[with(Refund_per_cadidate, order(x, decreasing = TRUE)), ]
+```
+
+Here we get a better visualization of our data, by using the cut fuction, we can add buckets of data that we can then use to better visualaization abour or data.  It looks like values in the 2500 to 3000 values acount for abount32.5 of the amounts in the cumulative sum.  While we saw in our previous graph that the number of total refundes are mostly values below 1000 dollars.  In terms of how much refunds under under 1000 contrubute to the overall totla of refunds, we can see they only contribte arround %26.  Lets see how these refunds are devided amoung the cadidates.
+
+```{r}
+
+#total amount refunded by cadidates
+Refund_per_cadidate <- aggregate(bad_amounts$contb_receipt_amt, by=list(Category=bad_amounts$cand_nm), FUN=sum)
+##order by candidate
+Refund_per_cadidate <- Refund_per_cadidate[with(
+  Refund_per_cadidate, order(x, decreasing = TRUE)), ]
+colnames(Refund_per_cadidate)<- c("Candidate","Total_Refund")
+Refund_per_cadidate
+```
+
+Here we can see the total amount refunded per cadidate, It looks like the refund amounts for Hillary Clinton and Bernie sanders are more more than the other cadididates, this makes since becuse they probably recived more donations and thus had more to  refund for various resasons.  Lets take a look at one more plot to see how these values are distributed.
+
+
+##Distribution of Total cadidate Refunds
+```{r}
+
+# summary(Refund_per_cadidate$Total_Refund)
+ggplot(Refund_per_cadidate,aes(x="",y= Total_Refund))+
+  geom_boxplot()+
+  xlab("All Candidates") +
+  ylab("Amount refunded")
+```
+
+We can see that most cadidates refunded amounts beteen around 10,000 and 50,000 dollars. We see our three outliers of Hillary Clinton, Maco Rubio and Berinie sanders marked as points on the graph.
+
+While we could do more analysis on the refunds, namely Marko Rubio, since he didn't have a large number of donations compared to Bernie Sanders and Hillary Clinton, I think it is time to move on to the larger data set of campaign contributions.  We can revist our refund later.
+
+##Main Data Investigation.
+
+```{r}
+#Qurey for only campaign contributions given to candidates
+Pos_amounts <-subset(CA_samp, contb_receipt_amt > 0)
+#get rid of blank column 
+Pos_amounts <- Pos_amounts[,colSums(is.na(Pos_amounts))<nrow(Pos_amounts)]
+
+#Clean Occupatios field 
+Pos_amounts$contbr_employer <-gsub("NOT EMPLOYED","NONE",
+                              Pos_amounts$contbr_employer) 
+Pos_amounts$contbr_employer <-gsub("SELF EMPLOYED","SELF",
+                              Pos_amounts$contbr_employer) 
+Pos_amounts$contbr_employer <-gsub("SELF-EMPLOYED","SELF",
+                              Pos_amounts$contbr_employer)
+
+
+#get rid of scientific notation
+options(scipen=999)
+
+
+#head of data 
+head(Pos_amounts)
+
+
+```
+
+Here we do some intial formating and styling that will help us as we do our investigation.  It looks like We have redundant values for Self Employed, Self and Self-Employed in our contbr_employer field.  We are able to clean this with the gsub fuction to replae the valuses.  WE also wet our options so that values will not print in scientific notation.  WE can see that we still have a majority of our sample data after sorting out the refund values, we should now only be getting values that are above zero. Lets Us first try to vizualize our data.
+
+
+
+
+
+```{r}
+
+# ggplot(data=Pos_amounts, aes(Pos_amounts$contb_receipt_amt)) + 
+#   geom_histogram() + 
+#   scale_x_continuous(limits = c(0,2800)) +
+#   scale_y_continuous(limits = c(0,15000))
+
+ggplot(data=Pos_amounts, aes(Pos_amounts$contb_receipt_amt)) + 
+  geom_histogram(binwidth = 25) + 
+  scale_x_continuous(limits = c(0,2800), breaks = seq(0, 2800, by = 200))+
+  scale_y_continuous(limits = c(0,7500))+
+  xlab("Contibutions USD")+
+  ylab("Number of Contributions")
+  
+
+
+
+```
+
+
+Looking at this plot, we get a quick Idea of how our values are distributed.  It looks likes there is a spike in values at 2700, this makes sense becuase it is the maximun donation an individual is able to contribute to a candidates.  THere is a small spike around \$2,000 and another large spike around \$1000 it looks like there is one more large spike at \$500 contibution level.  It looks like the mode of our data is at around the \$250 contribution level.  alot of our data is under \$200 level with a seconld largerst spike in our hitogram at valus under \$100
+
+
+
+
+
+
+
+##Date Time Conversion 
+```{r}
+#lets create a function to change the date to 3 seperate 
+#Y M D fields in our data frame that way we cn compare values later.
+Pos_amounts$contb_receipt_dt <- as.Date(
+  #replace with date time object we can get useful 
+  #values from as well as making the date graphical by order of date. 
+  Pos_amounts$contb_receipt_dt,format='%d-%b-%y')
+#Adds Day colum
+Pos_amounts$contb_receipt_dt_day <- weekdays(Pos_amounts$contb_receipt_dt) 
+#Adds month Colum
+Pos_amounts$contb_receipt_dt_month <- months(Pos_amounts$contb_receipt_dt).
+head(Pos_amounts)
+
+#plot by day 
+ggplot(data= Pos_amounts, aes(x=contb_receipt_dt_day)) +
+    geom_bar(stat="count") +
+  xlab("Top Cities By Contibution Number")+
+  ylab("Number of Contributions")+
+  theme(legend.title = element_text(colour="black", size=11, face="bold"))
+  
+
+
+
+```
+
+Here we do some data cleaning on our receipt_dt field by turing it into a Date/Time object and from there extracting two colums for the day and month from that date that we can get some interesteing statistics. Lets get some intital plots as a function of time.  Taking a wuick look, we can see that majority of donations were given in october.  I was expecting for a majority of donations to be collected in november since that is close to electiond day, but upon further thought, this passes the sanity test.  Election day is the 8th of november, so it really doesn't give those values a long period of times to accumulate.  THe most common days to contibute are Tuesday and Wednesday.  While the least common are weekends.
+
+```{r}
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt),
+       data = Pos_amounts,
+       log10="y") +
+  geom_line()+
+  facet_wrap(~cand_nm)+
+  # rotate x axis values 
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))+ 
+  xlim(as.Date(c("2015-11-09", "2017-1-1")))+
+  xlab("Month and Year") +
+  ylab("Contribution Amount(USD)")
+  
+```
+
+
+
+Here we can see roughly how our values for all canditates are distributed over time with regards to campaign donations.  Some intital things to observe are that there seem to be alot of canditadtes that have little or no campaign donation data.  And not all candiates have as long a recond or danation,  This makes sence becuse differnt canditates dropped our at differnt times.  We can see that cadidates like Jill Stien, Hillary clinton, and donald Trup have a full graph of recipts while cadidates like Carly Fiorina only have a short period of values.  One Cadidate of note is Evan McMullin.  Notice how he only has contributions for the later values.  He ran late in the race as a cadidate in Utah.  Lets see how our total campain contibutions shape out amoung cadidates.
+
+```{r}
+#Get aggregate values 
+receipt_amt_cadidate <- aggregate(Pos_amounts$contb_receipt_amt, 
+                      by=list(Category=Pos_amounts$cand_nm), FUN=sum)
+receipt_amt_cadidate <- receipt_amt_cadidate[with(receipt_amt_cadidate, 
+                order(-rank(receipt_amt_cadidate$x)), decreasing = FALSE), ]
+
+
+summary(receipt_amt_cadidate$x)
+colnames(receipt_amt_cadidate) <- c("Cadidate", "Total campaign donation")
+
+head(receipt_amt_cadidate)
+#get count of values 
+donation_per_cadidate <- table(Pos_amounts$cand_nm)
+donation_per_cadidate = as.data.frame(donation_per_cadidate)
+colnames(donation_per_cadidate) <- c("Cadidate", "Total_donation")
+donation_per_cadidate <- donation_per_cadidate[with(donation_per_cadidate, order(-rank(donation_per_cadidate$Total_donation)), 
+                                                    decreasing = FALSE), ]
+
+#merge values 
+total <- merge( receipt_amt_cadidate,
+                donation_per_cadidate, by=c("Cadidate","Cadidate"))
+total$avrage_donation <- total$`Total campaign donation`/total$Total_donation
+total <- total[with(total, 
+                    order(-rank(total$avrage_donation)), decreasing = FALSE), ]
+total
+
+```
+We can see heare that our top three candidates have alot more money donated than than the rest of the field.  In fact, she revived more than 4.8 times the donations as the next closet cadidate, Bernard Sanders. Lets use a scatter plot to see where the values call for the top 3 cadidates on the same time graph. We can also see from the table function that the Benie Sanaders and Hillary clinton contain a Majority of the donations.  What is of some interest is the high number of funds raised by marco rubio and ted cruze.  In fact, when we look at the data, we see that Rebublican Cadidates have a much higher average donation, This could be due to more wealthy individulas contributing to republican cadidates.  Since many of our cadidtates dont have too many numbers of total donations, we will just look at the top 5 cadidates for now.
+```{r}
+library(RColorBrewer)
+
+selected <- c("Clinton, Hillary Rodham", "Sanders, Bernard","Trump, Donald J.",
+              "Cruz, Rafael Edward 'Ted'","Rubio, Marco" )
+summary(Pos_amounts[Pos_amounts$cand_nm %in% selected,]$contb_receipt_amt)
+
+
+fin_p<-ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt), 
+              data =Pos_amounts[Pos_amounts$cand_nm %in% selected,]) + 
+  scale_colour_gradient2()+
+  geom_point(alpha = 0.5, size = 1, position = 'jitter', aes(colour = cand_nm)) +
+  scale_color_brewer(type = 'qual',
+    palette='Set1',
+    guide = guide_legend(title = 'Cadidate', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) +  
+  scale_x_date(date_labels = "%b %d", 
+               limits = as.Date(c("2015-11-09", "2017-1-1")), 
+               date_breaks = "1 month" ) +
+   scale_y_continuous(trans = log10_trans(),breaks = seq(60, 10000, by = 5000))+
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))+ # rotate x axis values 
+    ggtitle('Top Earning Cadidates') +
+  geom_smooth()+
+  xlab("Month(2015)-Month(2016)") +
+  ylab("Contribution Amount(USD)")
+fin_p
+```
+
+Our graph here is kind of messy, but we can still get some good insight from this graph. First, we can see that it looks like Bernie Sanders didnt have alot of donations around november 2015 time frame,  It also seems like morst of his donations are  below the 200 dollar mark and it seems like alot of his donations came between april and june of 2016. Threre also seem to be alot of high value donations for Hillary Clinton. We can see that following the election, Donald turmp is the only cadidate reciveing contributions form november to january. It seems as if most of his contiubtions are higher than our general and primary election contributions.  Well get a more indepth look our data by candiates later, for now lets take a look at our data that takes place after november 1st.
+
+```{r}
+Election_year<- Pos_amounts[Pos_amounts$contb_receipt_dt >= '2016-01-1',]
+summary(Election_year)
+
+
+
+ggplot(Election_year[order(match(Election_year$contb_receipt_dt_month, month.abb)),], 
+       aes(x = contb_receipt_dt_month, y = contb_receipt_amt)) +
+        geom_boxplot() +
+        ggtitle("Boxplot by months") +
+  scale_y_continuous(limits = c(0, 300),breaks = seq(0, 300, by = 25 ))+
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))+ # rotate x axis values 
+    xlab("Month 2016") +
+  ylab("Contribution Amount(USD)")
+  
+  
+        
+```
+Looking at our Box Plots for the election year, we can see that the average in December is much higher than in other months.  In fact our cage for the month of december is outside of the 75th percentile of other data plots.  This matchs up with our skatterplot data and the trend found by using the geom smooth function.  It looks like the mean of the contributions during december is between 75 and 100 dollars.  Most months have aveages of under 40.  Lets continue our investigation. 
+
+
+```{r}
+p <- ggplot(data =Pos_amounts[Pos_amounts$cand_nm %in% selected,], ) +
+    geom_histogram(mapping = aes(x = contb_receipt_dt, 
+          y = contb_receipt_amt),binwidth=2, stat="identity" )
+p + 
+  scale_x_date(date_labels = "%b %d", 
+               limits = as.Date(c("2016-05-31", "2016-09-12")), 
+               date_breaks = "2 month" ) 
+
+ggplot(Pos_amounts[Pos_amounts$cand_nm %in% selected,], 
+       aes(cand_nm, contb_receipt_amt))+ 
+  geom_boxplot()+
+  scale_y_continuous(breaks = seq(0, 500, by = 50), 
+                     limits = c(0, 500)) + geom_jitter(width = 0.2)
+  
+
+
+ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, colour = cand_nm), 
+       data =Pos_amounts[Pos_amounts$cand_nm %in% selected,]) +
+  geom_point(alpha = 0.7, size = 1, position = 'jitter') +
+  facet_grid(. ~ cand_nm)+
+  scale_y_continuous(trans = log10_trans(),breaks = 
+                       seq(200, 15000, by = 5000))+
+  scale_x_date(date_labels = "%b %d", 
+               limits = as.Date(c("2016-05-31", "2016-09-12")), 
+               date_breaks = "2 month" ) +
+  xlab("Month and Day") +
+  ylab("Contribution Amount(USD)")
+  
+```
+
+
+By usint the summary functions we can see that the middle 50% of donations happend between 2016-05-31 and 2016-09-12.  Looking at the distribution of this data, it looks like cadidates ted cruze and Marco Rubio were already out of the presidental race by this point, or at the verry least did not have a substantal number of donations.  Looking at our other three cadidates, We can see that the candidate with the least least varence in amounts donated is Bernard Sanders.  He also has the shortest duration in values as he did not go on to the general election.  Both Hillary clinton and Donald trunp seem to have a large amount of varience in their donation amounts.  One limitation of this graph is that is does not account for total number of donations.  Without the information from earlier, this graph may lead you to belive that dondald trump had presense in califonia, and while his amount raised (1060584.35) is high, the comparative number of donations to the top two cadidates(6299), is not.  Lets create a histogram to see if our spread assumptuion is correct.
+
+```{r}
+
+selected2 <- 
+  c("Clinton, Hillary Rodham", "Sanders, Bernard","Trump, Donald J.")
+
+p <- ggplot(data =Pos_amounts[Pos_amounts$cand_nm %in% selected2,], ) +
+    geom_histogram(mapping = aes(x = contb_receipt_dt, 
+                                 y = contb_receipt_amt),binwidth=2, 
+                   stat="identity" )
+p + 
+  scale_x_date(date_labels = "%b %d", 
+               limits = as.Date(c("2016-05-31", "2016-09-12")), 
+               date_breaks = "2 month" )+
+  facet_grid(. ~ cand_nm)
+
+```
+
+Looking at the graphs, we can see that the distributions for Hillary Clinton and Donald trunp seem to be normally distributed, we can also see that there there are not alot of donations for berinie sanders dirning this time perid, despite reciveing the second most ammount of donations overall for the state of California.  For me this makes since but was a little unexpected.  Since clinton and trup made it all the way to the general Election, it makes sense that the time period for donations whould be skewed towards the general election when there is more excitement.  Lets take a closer look to see how these caditaes donations were recieved over time.
+
+```{r}
+#subset datasets by cadidate
+b <- subset(Pos_amounts,cand_nm == "Sanders, Bernard")
+c <- subset(Pos_amounts,cand_nm == "Clinton, Hillary Rodham")
+h <- subset(Pos_amounts,cand_nm == "Trump, Donald J.")
+
+summary(b$contb_receipt_dt)#summary of how our dates entries are distributed.
+
+#reorder by date 
+b<- b[with(b, order(b$contb_receipt_dt)), ]
+c<- c[with(c, order(c$contb_receipt_dt)), ]
+h<- h[with(h, order(h$contb_receipt_dt)), ]
+
+#add sum donation column 
+b<- b %>% mutate(Sum_0f_Contibutions = cumsum(b$contb_receipt_amt))
+c<- c %>% mutate(Sum_0f_Contibutions = cumsum(c$contb_receipt_amt))
+h<- h %>% mutate(Sum_0f_Contibutions = cumsum(h$contb_receipt_amt))
+
+tail(c$Sum_0f_Contibutions/max(c$Sum_0f_Contibutions))
+
+#sanders graph
+bg <- ggplot(aes(x = contb_receipt_dt, 
+                 y = Sum_0f_Contibutions/max(b$Sum_0f_Contibutions)), 
+             data = b) +
+  geom_line() +
+  ggtitle("Sanders Graph") +
+  theme(plot.title = element_text(lineheight=.8, face="bold"))+
+  scale_y_continuous(breaks = seq(0, 1, by = .2), 
+                     #adds second axis
+              sec.axis = sec_axis(~.*max(b$Sum_0f_Contibutions), 
+                                  name = "Cumulative dollars") )+ 
+  scale_x_date(date_labels = "%B-%Y", date_breaks = "3 month")+
+  theme(axis.text.x=element_text(angle=70,hjust=1))+
+  xlab("Contribution Date") +
+  ylab("Percentage of value of total contribution")
+
+#clinton graph
+cg<- ggplot(aes(x = contb_receipt_dt, 
+                y = Sum_0f_Contibutions/max(c$Sum_0f_Contibutions)), 
+            data = c) +
+  geom_line() +
+  ggtitle("Clinton Graph") + 
+  scale_y_continuous(breaks = seq(0, 1, by = .2), 
+                     #adds second axis
+    sec.axis = sec_axis(~.*max(c$Sum_0f_Contibutions),
+                        name = "Cumulative dollars") )+ 
+  theme(plot.title = element_text(lineheight=.8, face="bold"))+
+  scale_x_date(date_labels = "%B-%Y", date_breaks = "3 month")+
+  theme(axis.text.x=element_text(angle=70,hjust=1))+
+  xlab("Contribution Date") +
+  ylab("Percentage of value of total contribution")
+
+#Trump Graph
+tg <- ggplot(aes(x = contb_receipt_dt,
+  y = Sum_0f_Contibutions/max(h$Sum_0f_Contibutions)), data = h) +
+  geom_line() +
+  ggtitle("Trump Graph") +
+  scale_y_continuous(breaks = seq(0, 1, by = .2), 
+         #adds second axis
+        sec.axis = sec_axis(~.*max(h$Sum_0f_Contibutions), 
+                            name = "Cumulative dollars") )+ 
+  theme(plot.title = element_text(lineheight=.8, face="bold"))+
+  scale_x_date(date_labels = "%B-%Y", date_breaks = "3 month")+
+  theme(axis.text.x=element_text(angle=70,hjust=1))+
+  xlab("Contribution Date") +
+  ylab("Percentage of value of total contribution")
+
+
+par(mfrow=c(3,1))
+
+bg
+cg
+tg
+grid.arrange(bg, cg, tg, ncol = 3)
+# ggplot(data =Pos_amounts[Pos_amounts$cand_nm %in% selected2,], 
+#aes(x=Pos_amounts[Pos_amounts$cand_nm %in% selected2,]$contb_receipt_dt)) + 
+#stat_ecdf(geom = "step", pad = FALSE)+
+#   facet_grid(. ~ cand_nm)+
+#   scale_x_date(date_labels = "%b %d", limits = as.Date(c(
+#"2016-02-16", "2016-04-29")), date_breaks = "1 month" )
+
+
+
+head(b$Sum_0f_Contibutions)
+ b$Sum_0f_Contibutions<-as.numeric(as.character(format(
+   b$Sum_0f_Contibutions,  scientific = FALSE)))## Format cumulative values  
+  xlab("Refunded Ammount") +
+  ylab("Percentage of Number of Refundes")
+```
+
+
+By using the summary function we can see that most of berie sanders values were between 2016-02-16 and 2016-04-29.  THis is way before the time period of june through september shown on our other graph.  We can see that if we between the time peroid of 2016-02-16 and 2016-04-29, we can see that the values of compaign contributions are incresing greatly at this point.  In fact, if we enter this time period on google trends for califonia, we can see that searches for sanders out numberd searches for clinton.  It also looks like around 50% of his campaign contributions came during this time. One thing that is odd is that there is an inflection point in april where the donations start to drop off until it seems bernie sanders droped out of the race mid august. During that same time.  By  looking at the grahp, we can see that sanders was still behind dollars wise at this point.  But it seems like from the April to may timeframe their campaign contributions were similar but we will have to investigate further as we cannot tell from the graph, lastly Donald campaign controbuitions were relativly low untill around mid May.  This could be explained by the start of the general election.  Lastly, it would be incorrect to assume that Donald Trump raised more money than hillary clintion in later months, remember this graph is relative to the total number raized by that cadidate.  Most of trumps money was raized from june to november totaling less than 2 million dollars. While That was just a fraction of Cliton's Controbutions and it looks to be a little less than 10 millon.  I am still curious about the Sanders and Cliton contrubutions during that time period of 2016-02-16 to 2016-04-29, so I will take a closer look.
+
+
+
+
+
+
+
+
+##Box Plot and Cumulative graph. 
+
+```{r}
+selected3 <- c("Clinton, Hillary Rodham", "Sanders, Bernard")
+
+
+#filter cliton and sanders 
+Dem_snip<-Pos_amounts[Pos_amounts$cand_nm %in% selected3,]
+
+
+#filtrer for values during sanders active 
+#period to compare sanders and clinton during that time.
+selected3
+Dem_snip<-subset(Dem_snip, 
+        contb_receipt_dt > "2016-02-16" & contb_receipt_dt < "2016-04-29" )
+
+#Snips splits into sub groups.
+Dem_snipb <- subset(Dem_snip,cand_nm == "Sanders, Bernard")
+Dem_snipc <- subset(Dem_snip,cand_nm == "Clinton, Hillary Rodham")
+
+#reorder by ammount  
+Dem_snipb<- Dem_snipb[with(Dem_snipb, order(Dem_snipb$contb_receipt_amt)), ]
+Dem_snipc<- Dem_snipc[with(Dem_snipc, order(Dem_snipc$contb_receipt_amt)), ]
+
+#add sum donation column 
+Dem_snipb<- Dem_snipb %>% mutate(
+  Sum_0f_Contibutions = cumsum(Dem_snipb$contb_receipt_amt))
+Dem_snipc<- Dem_snipc %>% mutate(
+  Sum_0f_Contibutions = cumsum(Dem_snipc$contb_receipt_amt))
+
+head(Dem_snipc)
+#see number of donation split by cadidate for feb to april time period.
+table(Dem_snip$cand_nm)
+
+
+ #box plot for the showing distibuton of averages.
+ dem_bxplt<-ggplot(Dem_snip, aes(cand_nm, contb_receipt_amt))+
+   geom_boxplot()+
+   scale_y_continuous(limits = c(0,100))+
+   xlab("Canidate Name") +
+   ylab("Average Contribution(USD)") 
+ 
+
+ 
+ #Plot cumatlive sum by by cadidate.
+ dem_lngph<-ggplot() +
+  geom_line(data = Dem_snipb, aes(contb_receipt_amt, 
+                          Dem_snipb$Sum_0f_Contibutions)) +
+  geom_line(data = Dem_snipc, aes(contb_receipt_amt, 
+                          Dem_snipc$Sum_0f_Contibutions), colour = "red")+
+  scale_x_continuous(breaks = seq(0, 5000, by = 1000))+
+  xlab("Contibution ammount (USD) ") +
+  ylab("Total of contibution (USD)") 
+  
+grid.arrange(dem_bxplt, dem_lngph, nrow = 2)   
+
+```
+
+
+Using table function we see that while overall Hillary had a substantal lead in donation amount and total number of donations, that at least, for this short time table of 2016-02-16" to "2016-04-29" that bernie sanders had recieved significantly more donations.  In fact, Bernie sanders had 30,606 contriubutions during this time period, while Hillary Clintion recived 10,088.  That is more than 3 times Hillary Clintons amount of 10,088.  looking at the Box Plots, we can see that the average distribution amounts seem to be close to each other with benie having a slight edge.  Looking at the cumulative values graph, we get a better sense of how how much the outlires contibute to the the dandidates campaign contributions. It looks like while the means for both canditates are simular, the outliers for hillary clinton contibute much more to her overall total.          
+
+
+
+## Investigate High Values
+```{r}
+
+#makes a field so that you can query the dat in that range.
+Dem_snip$contb_receipt_amt.bucket <- cut(Dem_snip$contb_receipt_amt, 
+                              c(500, 1000, 1500, 2700), dig.lab = 4)
+
+
+high_dontations<-subset(Dem_snip, contb_receipt_amt>500)
+
+ggplot(data=high_dontations, aes(x=cand_nm, fill = 
+                                   contb_receipt_amt.bucket)) +
+    geom_bar(stat="count")+
+  xlab("candidates")+
+   scale_color_brewer(type = 'qual',
+    palette='Set1',
+    guide = guide_legend(title = 'High Value Interavals(USD)', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) +
+  ylab("Number of Contibutions")
+
+
+
+
+
+```
+
+Hear we can see that Hillary clinton had many more high dollar value contributions, In fact, There were nearly 4 times as many Hillary Clinton votes as compared to Bernie Sanders.  In addition to this, most of Sanders high value ammounts are between 500 and 1000 dollars.  In contast Hillary Clintion high dollar controbutions between 1500 to 2700 was more than double All of sanders high dollar contributions.  This explains how the total amounts raised for both cadidats are so close while the total number of contributions during the time period of  2016-02-16" to "2016-04-29" were overwelmingly in favor of sanders.
+
+##Occupation. 
+```{r}
+
+head(table(b$contbr_employer))
+
+#get top employers for Sanders contributers 
+empb<-as.data.frame(table(b$contbr_employer))
+empb<-empb[with(empb, order(-rank(empb$Freq)), 
+                decreasing = FALSE), ]
+top_emp<-head(empb,20)
+
+#get top employers for Clinton contributers 
+empc<-as.data.frame(table(c$contbr_employer))
+empc<-empc[with(empc, order(-rank(empc$Freq)), decreasing = FALSE), ]
+top_emp2<-head(empc,20)
+
+bg<-ggplot(data =b[b$contbr_employer %in% top_emp$Var1,],
+           aes(x = contbr_employer)) +
+  theme(axis.text.x=element_text(angle=70,hjust=1))+
+    geom_bar( )+
+  xlab("Employers")+
+  ylab("Number of Contribution")+
+  ggtitle("Sanders Condtibution")
+
+cg<-ggplot(data =c[c$contbr_employer %in% top_emp2$Var1,],
+           aes(x = contbr_employer)) +
+  theme(axis.text.x=element_text(angle=70,hjust=1))+
+    geom_bar( )+
+  xlab("Employers")+
+  ylab("Nuber of Contribution")+
+  ggtitle("Clinton Contirbution")
+
+grid.arrange(bg, cg, ncol = 2)
+
+'Google'%in%unlist(top_emp$Var1)
+top_emp[1]
+
+head(b)
+
+```
+
+We can see in the list of top employers in sanders graph.  It looks like we have a large number of self empoyed in our data while propotionaly hillary clinton has a large nuber or respondets that declinded to respond.  It also seems like hillary has a much lower number of unemployed and retired. Lets see if we can get an Idea of how these values are distributed.
+
+
+
+
+
+##Employer and Contibution ammount 
+```{r}
+
+
+
+bg<-ggplot(data = b[b$contbr_employer %in% unlist(top_emp[[1]][1:7]),]) + 
+   geom_point( alpha = 1/2, mapping = aes(x = contb_receipt_dt, 
+                y = contb_receipt_amt, colour = contbr_employer)) +
+  scale_color_brewer(type = 'qual',
+    palette='Set1',
+    guide = guide_legend(title = 'Top Employer', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) +
+  ggtitle("Sanders Contirbution by top employer")+
+  xlab("Month and Year")+
+  ylab("Contribution(USD)")
+
+cg<-ggplot(data = c[c$contbr_employer %in% unlist(top_emp2[[1]][1:7]),]) + 
+   geom_point( alpha = 1/2, mapping = 
+                 aes(x = contb_receipt_dt, y = contb_receipt_amt,
+                     colour = contbr_employer)) +
+  scale_color_brewer(type = 'qual',
+    palette='Set1',
+    guide = guide_legend(title = 'Top Employer', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) +
+  ggtitle("Clinton Contirbution by top employer")+
+  xlab("Month and Year")+
+  ylab("Contribution(USD)")
+
+grid.arrange(bg, cg, nrow = 2)
+unlist(top_emp2[[1]][2:10])
+
+head(b)
+```
+
+Here we can see a little more about how the candidates how the contibutions were given over time sepprated by employers.  It seems the early period in sanders campaign had much more diveverse sources of donations, but they were much less numerous.  As the campaigne moved on, the unemployed donated a majority of the values to his campaign with a large pecentage of those amount being under 500.  Looking at the the numbers for clintion there seems to be a larger amoung of donations towards the 2,700 dollar ammount.  
+
+##Contributor Occupation.
+```{r}
+
+Ocu<-as.data.frame(table((Dem_snip$contbr_occupation)))
+Ocu<-Ocu[with(Ocu, order(-rank(Ocu$Freq)), decreasing = FALSE), ]
+top_ocu<-head(Ocu,20)
+top_ocu
+
+
+ggplot(data = Dem_snip[Dem_snip$contbr_occupation %in% 
+                         unlist(top_ocu[[1]][1:10]),]) + 
+   geom_point( alpha = 1, 
+               mapping = aes(x = contb_receipt_dt, 
+                  y = contb_receipt_amt, colour = contbr_occupation)) +
+  facet_wrap(~cand_nm)+
+  scale_color_brewer(type = 'qual',
+    palette='Set3',
+    guide = guide_legend(title = 'Cadidate', reverse = T,
+    override.aes = list(alpha = 1, size = 2))) +
+  ggtitle("Sanders Contirbution by top employer")+
+  xlab("Month in 2016")+
+  ylab("Contribution(USD)")
+  
+
+```
+Looking at the Contibution amount by occupation during  Sanders stong period in california, we can see more clearly the differce in donations.  It looks like much of Sanders Contributions came from the unemployed and the self employed, whaile much of clintons contibutions came from the Self Employed and the unemployed.  Lets check out how the distibution of donatios varied amoung cadidates. 
+
+## Box Plot of occupations 
+```{r}
+ggplot(Dem_snip[Dem_snip$contbr_occupation %in% 
+                  unlist(top_ocu[[1]][1:10]),], 
+       aes(x = contbr_occupation, y = contb_receipt_amt)) +
+        geom_boxplot(fill = "gold1", colour = "goldenrod2") +
+        ggtitle("Boxplot employer") +
+  scale_y_continuous(limits = c(0, 300),breaks = seq(0, 300, by = 25 ))+
+  facet_wrap(~cand_nm)+
+  # rotate x axis values
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) + 
+  xlab("Occupation")+
+  ylab("Contribution(USD)")+
+  geom_jitter(alpha=1/200)
+
+
+```
+
+Looking at the box plot we can see that there is much less variance in the Sanders graph vs the Cliton graph.  Other than that there are just a few things to note.  The first is that there is Average for Softwae Engineers seems to be higher on the Clinton Graph than the Sanders Graph. The second is that the highest average donation came from the information requested field. The last thing I found using the geom Jitter command was that sanders tended to have alot of support ammound the Unemployed. In fact, The graphic for the unemployed on sanders graph in barely visible, while the graphic on Clintons Graph seems to have alot of contriutions from retired personel.    
+
+## City relationship 
+```{r}
+
+
+
+class(Dem_snip$contbr_city)
+str(Dem_snip)
+
+# Create new data frame orderd by count of orginal datafram colum 
+City_data <-table(Dem_snip$contbr_city)
+City_data = as.data.frame(City_data)
+colnames(City_data) <- c("City", "City_Count")
+City_data <- City_data[with(City_data, 
+                            order(-rank(City_data$City_Count)), 
+                            decreasing = FALSE), ]
+
+
+#Create second city data table 
+City_data2 <- aggregate(
+  Dem_snip$contb_receipt_amt, 
+  by=list(Category=Dem_snip$contbr_city), 
+  FUN=sum)
+colnames(City_data2) <- c("City", "Total_by_city")
+City_data2 <- City_data2[with(City_data2, 
+                          order(-rank(City_data2$x)), decreasing = FALSE), ]
+City_data2
+
+#merge tables together 
+C_total <- merge( City_data,City_data2, by=c("City","City"))
+#New average donation per
+C_total$avrage_donation <- 
+  C_total$Total_by_city/C_total$City_Count (avrage_donation) 
+# Organize by average donation of city
+C_total <- C_total[with(C_total, order(-rank
+                      (C_total$avrage_donation )), decreasing = TRUE), ]
+# Organize by city count
+C_total <- C_total[with(C_total, order(-rank
+                      (C_total$City_Count )), decreasing = TRUE), ]
+C_total
+
+#candidate with most donations for city 
+top_avg_city<-list(as.character(C_total$City[1:5]))
+top_num_city<-list(as.character(head(C_total$City)))
+top_num_city
+top_avg_city
+"ROLLING HILLS" %in% top_avg_city
+top_avg_city <-c("ROLLING HILLS", "SUNSET BEACH",  
+                 "WOODSIDE", "WALNUT GROVE",  "MONTECITO")
+top_num_city<-c("LOS ANGELES","SAN FRANCISCO", 
+                "SAN DIEGO", "OAKLAND","SAN JOSE")
+#Plot top avage donation citiy on a 
+#bare graph split by bernie sanderes and hillary clinton 
+g1<-ggplot(data= Dem_snip[Dem_snip$contbr_city %in% top_avg_city,], 
+           aes(x=contbr_city, fill=cand_nm)) +
+    geom_bar(stat="count") +
+    scale_fill_manual(values=c("#999999", "#E69F00"))+
+  theme(axis.text.x=element_text(angle=30,hjust=1))+
+  xlab("Top Cities By average contribution")+
+  ylab("Number of Contributions")
+
+g2<-ggplot(data= Dem_snip[Dem_snip$contbr_city %in% top_num_city,], 
+           aes(x=contbr_city, fill=cand_nm)) +
+    geom_bar(stat="count") +
+    scale_fill_manual(values=c("#999999", "#E69F00"))+
+  xlab("Top Cities By Contibution Number")+
+  ylab("Number of Contributions")+
+  theme(legend.title = element_text(colour="black", size=11, face="bold"))+
+  scale_color_discrete(name="Name Of Candidate")
+grid.arrange(g1, g2, nrow = 2)  
+
+```
+
+
+Taking a closer look at our cities data it seems during the time period where Mr.Sanders recived a majority of his donations, that those donations came from Califonias largest cities.  It also looks like in those large cities, that Mr Sandres had a large majority in most cities.  Conversely it looks like hillary clinton while having a relativly low number of donations, tended to do better in small weathy cities with high average donations. 
+
+##Final Plots 
+```{r}
+fin_p
+```
+
+I realy like this plot because it shows how the cadidates values are disributed and it shows how the values tend to trend with the geom_smooth function.  Without the Geom_Smothe it is hard to tell that the values are shaply trending upward after the election.  Because the values are seprated by colors, It makes it easy to see that the values for trump tend to be higher than the values during the election.  While this graphy is good to see how information is distibuted overall.  It leaves more detaled quastions open.  For instance, we cannot tell from this graph what cadidate has raised the most money or how much money has been raised overall.
+
+```{r}
+g2
+```
+
+I like this graph becuse it makes it easy to see how the number of contibutions was distributed amoung the cities durring the Sanders campaings strong period in the largest cities.  We san also see at the same time how many of the contibutions belonged to each candidate for that particular city.  This makes comparing numbers easier.
+
+```{r}
+dem_lngph
+```
+One Thing I like about this graph is that it shows the cumulative increase per cadidate on the same graph.  By having a graph that accumulats over time, you can cisually see what values contibute to the ovrall total.  While this isn't as colorful as some of my other graphs, I think I like this one because it gives me a clear Idea of how my values are distibuted by contibution ammont. 
+
+##Conclusion
+
+We started our investigation with a large samlple of our data,  In our sample the day with the most number of contibutions is Febuary 16th.  We then went on to investigate the refund portion of our data.  During the refund investigation, we found that that marco rubio had an abnorally high refund compared to otheer cadidates of similar number of campaign contibutions. 50% of the value of all refunds were near the max campain donation of 2700.  The total refund for most cadidats was under $50,000.
+
+Next we moved onto the main dataset.  We found that the most common days to donate are Tuesday and Wednesday, while the least common day to donate are Tuesday and Thursday.  Our initial investigation lead us to try to go to the peroiod with the most amount of votes gor all caditates.  I later decided to look at the time period from when most of Sanders contributions were since the data was skewed more towards the general election.  During the time when most of benies donations were coming though, he was beating Clinton Nearly 3 to 1 in terms of number of received contributions.  Despite having a large advantage in terms of number of contibutions during this time period, Sanders only slightly out raised Clinton.  Upon further investigation,  we found that during this time period, clinton had a large advantage in terms of high dollar donations.  In fact, amoung donations over 500, Clinton has more donations btween 1500 and 2700 than total donations over 500 for sanders.  These large donation amounts made it so that clinton nearly had the same ammount raised a Sander during the time period where most of his donations fell.  Our final finding was that in terms of number on contributions, Sanders had signicaltly more in the largest cities in california.  One finding of note was the difference in occupation an how it differed amoung sanders and Clinton.  Clinton had a large number of donation amoung the retired, while Sanders had a large amount of donations coming from the unemployed.      
+
+I wanted to explore the whole Data Set to begin with,  Ultimatly I was drawn to the relationship beween Sanders and clinton.  I found that both had a large number of donations an ample data to work with.  Serching the web, it seems like around the time Sanders rate of campaing donations peaked, threre was a contoversery because the election was called in favor of Clinton despite the fact that Superdelegate cannot cast thier vote till the parties convetion.  Going thrugh this analysis, I would lean in the direction that calling the election before it was over affected campain donations and possibly voters enthusiam. However, correlation is not necessarily causation.  This is a a record of campaign contibutions and not a record of votes.  It could be that peopel that submitted donations dont correlate to the larger general population.  We have to remember that while there are over one million campaign contirbutions, some of those are are multiple donations by the same person and not an individual donation. But for now I do belive there is a relationship.
+
+## Sugestions for improvement.
+
+One thing I would like to do with this data is to further segment it by reigion.  I would like to add a field in the database to search for rule and urban areas to see how the the differnces between the two areas.  I would also like to add in the BLS API to search for the salaries of our occupation filed to add in an average salary by city field.
+
+
+
